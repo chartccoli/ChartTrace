@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -e
+
+# nvm 로드
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+
+# 의존성 설치 (node_modules 없을 때만)
+if [ ! -d "$ROOT/backend/node_modules" ]; then
+  echo "[setup] backend npm install..."
+  (cd "$ROOT/backend" && npm install)
+fi
+if [ ! -d "$ROOT/frontend/node_modules" ]; then
+  echo "[setup] frontend npm install..."
+  (cd "$ROOT/frontend" && npm install)
+fi
+
+# 기존 프로세스 정리
+cleanup() {
+  echo ""
+  echo "[stop] 서버 종료 중..."
+  kill "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null
+  wait "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null
+  exit 0
+}
+trap cleanup SIGINT SIGTERM
+
+echo "[start] 백엔드 (포트 4000)..."
+(cd "$ROOT/backend" && npm run dev) &
+BACKEND_PID=$!
+
+echo "[start] 프론트엔드 (포트 3000)..."
+(cd "$ROOT/frontend" && npm run dev) &
+FRONTEND_PID=$!
+
+echo ""
+echo "  ChartTrace 실행 중"
+echo "  → http://localhost:3000"
+echo ""
+echo "  Ctrl+C 로 종료"
+echo ""
+
+wait
