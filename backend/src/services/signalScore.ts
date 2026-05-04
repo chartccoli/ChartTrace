@@ -23,7 +23,71 @@ export interface AggVolSnapshot {
   breakdown: { exchange: string; type: 'CEX' | 'DEX'; quoteVolume: number; share: number }[];
 }
 
+// RSI 다이버전스 감지 (강세/약세 각각 SignalDetail 반환)
+function detectRSIDivergence(candles: OHLCV[], timeLabel: string): SignalDetail[] {
+  const LOOKBACK = 30;
+  const HALF = 15;
+  const RSI_BUFFER = 3; // 노이즈 필터: RSI 최소 3pt 차이 필요
+  if (candles.length < LOOKBACK + 14) return [];
+
+  const slice  = candles.slice(-LOOKBACK);
+  const closes = slice.map((c) => c.close);
+  const highs  = slice.map((c) => c.high);
+  const lows   = slice.map((c) => c.low);
+
+  const rsiVals  = RSI.calculate({ period: 14, values: closes });
+  const rsiStart = closes.length - rsiVals.length; // 항상 14
+
+  const getRsi = (i: number): number | null => {
+    const ri = i - rsiStart;
+    return ri >= 0 ? rsiVals[ri] : null;
+  };
+
+  // Window A (older): 0..HALF-1 / Window B (newer): HALF..LOOKBACK-2 (현재봉 제외)
+  let minLowA = Infinity,  rsiMinLowA: number | null = null;
+  let minLowB = Infinity,  rsiMinLowB: number | null = null;
+  let maxHighA = -Infinity, rsiMaxHighA: number | null = null;
+  let maxHighB = -Infinity, rsiMaxHighB: number | null = null;
+
+  for (let i = 0; i < HALF; i++) {
+    if (lows[i]  < minLowA)  { minLowA  = lows[i];  rsiMinLowA  = getRsi(i); }
+    if (highs[i] > maxHighA) { maxHighA = highs[i]; rsiMaxHighA = getRsi(i); }
+  }
+  for (let i = HALF; i < LOOKBACK - 1; i++) {
+    if (lows[i]  < minLowB)  { minLowB  = lows[i];  rsiMinLowB  = getRsi(i); }
+    if (highs[i] > maxHighB) { maxHighB = highs[i]; rsiMaxHighB = getRsi(i); }
+  }
+
+  const bullish =
+    rsiMinLowA !== null && rsiMinLowB !== null &&
+    minLowB < minLowA &&                          // 가격: 더 낮은 저점
+    rsiMinLowB > rsiMinLowA + RSI_BUFFER;         // RSI: 더 높은 저점
+
+  const bearish =
+    rsiMaxHighA !== null && rsiMaxHighB !== null &&
+    maxHighB > maxHighA &&                         // 가격: 더 높은 고점
+    rsiMaxHighB < rsiMaxHighA - RSI_BUFFER;        // RSI: 더 낮은 고점
+
+  return [
+    {
+      key: `rsi_bull_div_${timeLabel}`,
+      label: `RSI 강세 다이버전스 (${timeLabel})`,
+      weight: 3,
+      triggered: bullish,
+      direction: bullish ? 'bullish' : 'neutral',
+    },
+    {
+      key: `rsi_bear_div_${timeLabel}`,
+      label: `RSI 약세 다이버전스 (${timeLabel})`,
+      weight: 3,
+      triggered: bearish,
+      direction: bearish ? 'bearish' : 'neutral',
+    },
+  ];
+}
+
 export function calculateSignalScore(
+  candles1h: OHLCV[],
   candles4h: OHLCV[],
   candles1d: OHLCV[],
   rankChange7d: number | null,
@@ -117,7 +181,7 @@ export function calculateSignalScore(
     });
   }
 
-  // ─── RSI 과매도 반등 ───
+  // ─── RSI 과매도 반등 / 과매수 반락 ───
   if (candles4h.length >= 16) {
     const closes = candles4h.map((c) => c.close);
     const rsiValues = RSI.calculate({ period: 14, values: closes });
@@ -127,11 +191,18 @@ export function calculateSignalScore(
       const oversoldBounce = prev < 35 && curr > prev;
       const overboughtDrop = prev > 65 && curr < prev;
       signals.push({
-        key: 'rsi_bounce',
+        key: 'rsi_oversold',
         label: 'RSI 과매도 반등',
         weight: 2,
-        triggered: oversoldBounce || overboughtDrop,
-        direction: oversoldBounce ? 'bullish' : overboughtDrop ? 'bearish' : 'neutral',
+        triggered: oversoldBounce,
+        direction: oversoldBounce ? 'bullish' : 'neutral',
+      });
+      signals.push({
+        key: 'rsi_overbought',
+        label: 'RSI 과매수 반락',
+        weight: 2,
+        triggered: overboughtDrop,
+        direction: overboughtDrop ? 'bearish' : 'neutral',
       });
     }
   }
@@ -189,6 +260,10 @@ export function calculateSignalScore(
       direction: rising ? 'bullish' : 'neutral',
     });
   }
+
+  // ─── RSI 다이버전스 (1H / 4H) ───
+  signals.push(...detectRSIDivergence(candles1h, '1H'));
+  signals.push(...detectRSIDivergence(candles4h, '4H'));
 
   // ─── MACD 골든크로스 ───
   if (candles4h.length >= 27) {

@@ -15,10 +15,16 @@ const DIRECTION_ICON = {
   neutral: '●',
 };
 
+const DIRECTION_BADGE = {
+  bullish: { color: 'text-up',              bg: 'bg-up/15'   },
+  bearish: { color: 'text-down',            bg: 'bg-down/15' },
+  neutral: { color: 'text-yellow-400',      bg: 'bg-yellow-400/15' },
+};
+
 /** 사이드바용 작은 뱃지 */
 export function ScoreBadge({ score }: { score: SignalScore | null | undefined }) {
   if (!score || score.level === 'none') return null;
-  const cfg = LEVEL_CONFIG[score.level];
+  const cfg = DIRECTION_BADGE[score.direction];
   return (
     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${cfg.bg} ${cfg.color}`}>
       {DIRECTION_ICON[score.direction]} {score.score}

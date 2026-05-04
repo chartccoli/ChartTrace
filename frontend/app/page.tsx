@@ -1,4 +1,3 @@
-import dynamic from 'next/dynamic';
 import Header from '@/components/layout/Header';
 import CoinList from '@/components/sidebar/CoinList';
 import IndicatorPanel from '@/components/panels/IndicatorPanel';

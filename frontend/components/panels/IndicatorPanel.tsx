@@ -49,7 +49,7 @@ function IndicatorRow({
 }
 
 export default function IndicatorPanel() {
-  const { indicators, toggleIndicator, candleType, setCandleType, showPatterns, togglePatterns, viewMode, setViewMode, symbol, timeframe } =
+  const { indicators, toggleIndicator, candleType, setCandleType, viewMode, setViewMode, symbol, timeframe } =
     useChartStore();
 
   const { data: klinesData } = useQuery({
@@ -140,11 +140,6 @@ export default function IndicatorPanel() {
             </button>
           ))}
         </div>
-      </div>
-
-      {/* 패턴 인식 */}
-      <div className="px-3 py-2 border-b border-border">
-        <IndicatorRow label="패턴 감지" active={showPatterns} onToggle={togglePatterns} />
       </div>
 
       {/* 오버레이 지표 */}

@@ -26,8 +26,14 @@ function getActiveIndicatorList(indicators: ActiveIndicators): string[] {
   return (Object.keys(indicators) as (keyof ActiveIndicators)[]).filter((k) => indicators[k]);
 }
 
+const MAIN_CHART_DEFAULT_H = 420;
+const MAIN_CHART_MIN_H     = 180;
+const MAIN_CHART_MAX_H     = 800;
+
 export default function CandleChart() {
   const { symbol, timeframe, candleType, indicators, showPatterns } = useChartStore();
+
+  const mainChartHeightRef = useRef(MAIN_CHART_DEFAULT_H);
 
   const mainChartRef = useRef<HTMLDivElement>(null);
   const volumeChartRef = useRef<HTMLDivElement>(null);
@@ -110,6 +116,26 @@ export default function CandleChart() {
     []
   );
 
+  const handleMainChartDrag = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = mainChartHeightRef.current;
+
+    const onMove = (ev: MouseEvent) => {
+      const newH = Math.max(MAIN_CHART_MIN_H, Math.min(MAIN_CHART_MAX_H, startH + ev.clientY - startY));
+      mainChartHeightRef.current = newH;
+      mainChartApi.current?.applyOptions({ height: newH });
+    };
+
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, []);
+
   // 차트 초기화
   useEffect(() => {
     if (!mainChartRef.current || !volumeChartRef.current) return;
@@ -117,7 +143,7 @@ export default function CandleChart() {
     mainChartApi.current?.remove();
     volumeChartApi.current?.remove();
 
-    mainChartApi.current = createChart(mainChartRef.current, baseChartOptions(420));
+    mainChartApi.current = createChart(mainChartRef.current, baseChartOptions(mainChartHeightRef.current));
     volumeChartApi.current = createChart(volumeChartRef.current, {
       ...baseChartOptions(100),
       crosshair: { mode: CrosshairMode.Normal },
@@ -318,7 +344,7 @@ export default function CandleChart() {
     // 기존 메인 차트를 재생성하여 오버레이 시리즈 초기화
     if (!mainChartRef.current) return;
     mainChartApi.current.remove();
-    mainChartApi.current = createChart(mainChartRef.current, baseChartOptions(420));
+    mainChartApi.current = createChart(mainChartRef.current, baseChartOptions(mainChartHeightRef.current));
 
     candleSeries.current = mainChartApi.current.addCandlestickSeries({
       upColor: UP_COLOR,
@@ -496,6 +522,13 @@ export default function CandleChart() {
       />
 
       <div ref={mainChartRef} className="w-full" />
+
+      {/* 세로 리사이즈 핸들 */}
+      <div
+        onMouseDown={handleMainChartDrag}
+        className="h-1.5 w-full shrink-0 bg-border hover:bg-accent cursor-row-resize transition-colors select-none"
+        title="드래그하여 차트 높이 조절"
+      />
 
       {/* 거래량 차트 + 집계 출처 표시 */}
       <div className="relative border-t border-border">

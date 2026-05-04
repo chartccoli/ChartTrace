@@ -12,9 +12,14 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 type SortMode = 'rank' | 'score' | 'change24h';
 
 const STABLECOINS = new Set([
+  // USD 스테이블코인
   'USDT', 'USDC', 'DAI', 'BUSD', 'TUSD', 'FDUSD', 'PYUSD', 'FRAX',
-  'USDP', 'GUSD', 'LUSD', 'USDD', 'USTC', 'SUSD', 'EURS', 'STETH',
-  'WBTC', 'WETH', 'WBETH', // wrapped tokens도 제외
+  'USDP', 'GUSD', 'LUSD', 'USDD', 'USTC', 'SUSD', 'USDS', 'USDE',
+  'SUSDE', 'RLUSD',
+  // 기타 법정화폐 스테이블코인
+  'EURS',
+  // 래핑/스테이킹 토큰
+  'STETH', 'WBTC', 'WETH', 'WBETH', 'WEETH', 'RETH', 'CBBTC',
 ]);
 
 function useRealtimePrices(symbols: string[]) {
@@ -81,27 +86,37 @@ export default function CoinList() {
 
   const { data: coins, isLoading } = useQuery({
     queryKey: ['rankings'],
-    queryFn: () => fetchRankings(1, 50),
+    queryFn: () => fetchRankings(1, 200),
     refetchInterval: 60000,
   });
 
-  const symbols = coins?.map((c) => toBinanceSymbol(c.symbol)) ?? [];
-  const realtimePrices = useRealtimePrices(symbols);
+  // 스테이블코인·래핑 자산 제거 — 신호 계산·WebSocket 구독 대상에서도 완전히 제외
+  const tradableCoins = (coins ?? []).filter(
+    (c) => !STABLECOINS.has(c.symbol.toUpperCase())
+  );
+  const symbols = tradableCoins.map((c) => toBinanceSymbol(c.symbol));
 
-  // Signal Score 배치 조회 (2분 주기)
+  // WebSocket 실시간 가격: 시총 상위 50개만 구독 (200개 동시 구독은 과부하)
+  const top50Symbols = symbols.slice(0, 50);
+  const realtimePrices = useRealtimePrices(top50Symbols);
+
+  // Signal Score 배치 조회: 100개씩 2번 나눠서 요청 (2분 주기)
   const { data: scoreMap } = useQuery({
-    queryKey: ['batch-scores', symbols],
-    queryFn: () => fetchBatchSignalScores(symbols),
+    queryKey: ['batch-scores', symbols.join(',')],
+    queryFn: async () => {
+      const chunks = [symbols.slice(0, 100), symbols.slice(100)].filter((c) => c.length > 0);
+      const results = await Promise.all(chunks.map(fetchBatchSignalScores));
+      return Object.assign({}, ...results) as Record<string, any>;
+    },
     enabled: symbols.length > 0,
     refetchInterval: 120000,
     staleTime: 60000,
   });
 
-  const filtered = (coins ?? []).filter(
+  const filtered = tradableCoins.filter(
     (c) =>
-      !STABLECOINS.has(c.symbol.toUpperCase()) &&
-      (c.name.toLowerCase().includes(search.toLowerCase()) ||
-        c.symbol.toLowerCase().includes(search.toLowerCase()))
+      c.name.toLowerCase().includes(search.toLowerCase()) ||
+      c.symbol.toLowerCase().includes(search.toLowerCase())
   );
 
   const sorted = [...filtered].sort((a, b) => {

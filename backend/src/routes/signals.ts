@@ -42,7 +42,8 @@ router.get('/:symbol', async (req: Request, res: Response) => {
       ? `${symbol.slice(0, -4)}/USDT`
       : symbol as string;
 
-    const [candles4h, candles1d, aggKlines] = await Promise.all([
+    const [candles1h, candles4h, candles1d, aggKlines] = await Promise.all([
+      fetchBinanceKlines(symbol as string, '1h', 100),
       fetchBinanceKlines(symbol as string, '4h', 100),
       fetchBinanceKlines(symbol as string, '1d', 60),
       // 집계 거래량 (CEX 전용 — 속도 우선, 실패해도 무시)
@@ -58,7 +59,7 @@ router.get('/:symbol', async (req: Request, res: Response) => {
         }))
       : undefined;
 
-    const result = calculateSignalScore(candles4h, candles1d, rankChange, aggVol);
+    const result = calculateSignalScore(candles1h, candles4h, candles1d, rankChange, aggVol);
 
     cache.set(cacheKey, result);
     res.json(result);
@@ -76,7 +77,7 @@ router.get('/', async (req: Request, res: Response) => {
     return;
   }
 
-  const symList = symbols.split(',').slice(0, 50);
+  const symList = symbols.split(',').slice(0, 200);
   const cacheKey = `signals:batch:${symList.sort().join(',')}`;
   const cached = cache.get(cacheKey);
   if (cached) {
@@ -95,12 +96,13 @@ router.get('/', async (req: Request, res: Response) => {
         return;
       }
       try {
-        const [candles4h, candles1d] = await Promise.all([
+        const [candles1h, candles4h, candles1d] = await Promise.all([
+          fetchBinanceKlines(sym.trim(), '1h', 100),
           fetchBinanceKlines(sym.trim(), '4h', 100),
           fetchBinanceKlines(sym.trim(), '1d', 60),
         ]);
         const rankChange = getRankChange7d(sym);
-        results[sym] = calculateSignalScore(candles4h, candles1d, rankChange);
+        results[sym] = calculateSignalScore(candles1h, candles4h, candles1d, rankChange);
       } catch {
         results[sym] = { score: 0, level: 'none', signals: [], direction: 'neutral' };
       }

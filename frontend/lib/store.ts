@@ -34,7 +34,7 @@ export const useChartStore = create<ChartStore>((set, get) => ({
   symbol: 'BTCUSDT',
   timeframe: '4h',
   candleType: 'normal',
-  showPatterns: true,
+  showPatterns: false,
   viewMode: 'chart' as const,
   indicators: {
     bb: false,
