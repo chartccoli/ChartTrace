@@ -1,12 +1,20 @@
 import { ExchangeAdapter, Kline, AggregatedVolume } from './adapter.interface';
-import { BinanceAdapter }     from './cex/binance.adapter';
-import { OKXAdapter }         from './cex/okx.adapter';
-import { BybitAdapter }       from './cex/bybit.adapter';
-import { UpbitAdapter }       from './cex/upbit.adapter';
-import { CoinbaseAdapter }    from './cex/coinbase.adapter';
-import { UniswapAdapter }     from './dex/uniswap.adapter';
-import { PancakeSwapAdapter } from './dex/pancakeswap.adapter';
-import { DydxAdapter }        from './dex/dydx.adapter';
+import { BinanceAdapter }      from './cex/binance.adapter';
+import { OKXAdapter }          from './cex/okx.adapter';
+import { BybitAdapter }        from './cex/bybit.adapter';
+import { UpbitAdapter }        from './cex/upbit.adapter';
+import { CoinbaseAdapter }     from './cex/coinbase.adapter';
+import { MexcAdapter }         from './cex/mexc.adapter';
+import { KrakenAdapter }       from './cex/kraken.adapter';
+import { HtxAdapter }          from './cex/htx.adapter';
+import { GateioAdapter }       from './cex/gateio.adapter';
+import { KucoinAdapter }       from './cex/kucoin.adapter';
+import { BitgetAdapter }       from './cex/bitget.adapter';
+import { CryptocomAdapter }    from './cex/cryptocom.adapter';
+import { UniswapAdapter }      from './dex/uniswap.adapter';
+import { PancakeSwapAdapter }  from './dex/pancakeswap.adapter';
+import { DydxAdapter }         from './dex/dydx.adapter';
+import { HyperliquidAdapter }  from './dex/hyperliquid.adapter';
 
 export interface AggregatedKline extends AggregatedVolume {
   // 대표 OHLC (Binance 우선, 없으면 첫 번째 성공 어댑터)
@@ -21,11 +29,21 @@ export class VolumeAggregator {
 
   constructor(adapters?: ExchangeAdapter[]) {
     this.adapters = adapters ?? [
+      // CEX — 볼륨 큰 순
       new BinanceAdapter(),
       new OKXAdapter(),
       new BybitAdapter(),
-      new UpbitAdapter(),
+      new MexcAdapter(),
+      new KucoinAdapter(),
+      new BitgetAdapter(),
+      new HtxAdapter(),
+      new GateioAdapter(),
+      new KrakenAdapter(),
       new CoinbaseAdapter(),
+      new CryptocomAdapter(),
+      new UpbitAdapter(),
+      // DEX
+      new HyperliquidAdapter(),
       new UniswapAdapter(),
       new PancakeSwapAdapter(),
       new DydxAdapter(),

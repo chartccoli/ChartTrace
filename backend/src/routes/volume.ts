@@ -65,14 +65,22 @@ router.get('/', async (req: Request, res: Response) => {
  */
 router.get('/exchanges', (_req, res) => {
   res.json([
-    { name: 'binance',      type: 'CEX', priority: 1 },
-    { name: 'okx',          type: 'CEX', priority: 2 },
-    { name: 'bybit',        type: 'CEX', priority: 3 },
-    { name: 'upbit',        type: 'CEX', priority: 4 },
-    { name: 'coinbase',     type: 'CEX', priority: 5 },
-    { name: 'uniswap',      type: 'DEX', priority: 6 },
-    { name: 'pancakeswap',  type: 'DEX', priority: 7 },
-    { name: 'dydx',         type: 'DEX', priority: 8 },
+    { name: 'binance',     type: 'CEX', priority: 1 },
+    { name: 'okx',         type: 'CEX', priority: 2 },
+    { name: 'bybit',       type: 'CEX', priority: 3 },
+    { name: 'mexc',        type: 'CEX', priority: 4 },
+    { name: 'kucoin',      type: 'CEX', priority: 5 },
+    { name: 'bitget',      type: 'CEX', priority: 6 },
+    { name: 'htx',         type: 'CEX', priority: 7 },
+    { name: 'gateio',      type: 'CEX', priority: 8 },
+    { name: 'kraken',      type: 'CEX', priority: 9 },
+    { name: 'coinbase',    type: 'CEX', priority: 10 },
+    { name: 'cryptocom',   type: 'CEX', priority: 11 },
+    { name: 'upbit',       type: 'CEX', priority: 12 },
+    { name: 'hyperliquid', type: 'DEX', priority: 13 },
+    { name: 'uniswap',     type: 'DEX', priority: 14 },
+    { name: 'pancakeswap', type: 'DEX', priority: 15 },
+    { name: 'dydx',        type: 'DEX', priority: 16 },
   ]);
 });
 

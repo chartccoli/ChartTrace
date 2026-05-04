@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import {
   createChart,
   IChartApi,
@@ -15,6 +15,7 @@ import { useQuery } from '@tanstack/react-query';
 import { fetchKlines, fetchIndicators, fetchAggregatedVolume, Candle, HeikinAshiCandle, AggregatedKline } from '@/lib/binance';
 import { useChartStore, ActiveIndicators } from '@/lib/store';
 import { INDICATOR_COLORS } from './Indicators';
+import StackedVolumeChart from './StackedVolumeChart';
 
 const CHART_BG = '#0a0a0f';
 const GRID_COLOR = '#1e1e2e';
@@ -34,9 +35,9 @@ export default function CandleChart() {
   const { symbol, timeframe, candleType, indicators, showPatterns } = useChartStore();
 
   const mainChartHeightRef = useRef(MAIN_CHART_DEFAULT_H);
+  const [visibleRange, setVisibleRange] = useState<{ from: number; to: number } | null>(null);
 
   const mainChartRef = useRef<HTMLDivElement>(null);
-  const volumeChartRef = useRef<HTMLDivElement>(null);
   const subChart1Ref = useRef<HTMLDivElement>(null);
   const subChart2Ref = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
@@ -45,14 +46,11 @@ export default function CandleChart() {
   const isSyncingRef = useRef(false);
 
   const mainChartApi = useRef<IChartApi | null>(null);
-  const volumeChartApi = useRef<IChartApi | null>(null);
   const subChart1Api = useRef<IChartApi | null>(null);
   const subChart2Api = useRef<IChartApi | null>(null);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const candleSeries = useRef<ISeriesApi<any> | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const volumeSeries = useRef<ISeriesApi<any> | null>(null);
 
   // 집계 거래량 맵 (timestamp → AggregatedKline)
   const aggVolMap = useRef<Map<number, AggregatedKline>>(new Map());
@@ -116,6 +114,11 @@ export default function CandleChart() {
     []
   );
 
+  const timeToCoord = useCallback(
+    (time: number) => mainChartApi.current?.timeScale().timeToCoordinate(time as Time) ?? null,
+    []
+  );
+
   const handleMainChartDrag = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     const startY = e.clientY;
@@ -138,16 +141,11 @@ export default function CandleChart() {
 
   // 차트 초기화
   useEffect(() => {
-    if (!mainChartRef.current || !volumeChartRef.current) return;
+    if (!mainChartRef.current) return;
 
     mainChartApi.current?.remove();
-    volumeChartApi.current?.remove();
 
     mainChartApi.current = createChart(mainChartRef.current, baseChartOptions(mainChartHeightRef.current));
-    volumeChartApi.current = createChart(volumeChartRef.current, {
-      ...baseChartOptions(100),
-      crosshair: { mode: CrosshairMode.Normal },
-    });
 
     candleSeries.current = mainChartApi.current.addCandlestickSeries({
       upColor: UP_COLOR,
@@ -158,21 +156,8 @@ export default function CandleChart() {
       wickDownColor: DOWN_COLOR,
     });
 
-    volumeSeries.current = volumeChartApi.current.addHistogramSeries({
-      priceFormat: { type: 'volume' },
-      priceScaleId: '',
-    });
-
-    // 크로스헤어 동기화 + breakdown 툴팁
+    // 크로스헤어 → breakdown 툴팁
     mainChartApi.current.subscribeCrosshairMove((param) => {
-      if (param.time && volumeChartApi.current && volumeSeries.current) {
-        try {
-          volumeChartApi.current.setCrosshairPosition(0, param.time, volumeSeries.current);
-        } catch {
-          // series/chart mismatch during re-initialization — safe to ignore
-        }
-      }
-
       const tooltip = tooltipRef.current;
       if (!tooltip) return;
 
@@ -208,10 +193,10 @@ export default function CandleChart() {
       tooltip.style.display = 'block';
     });
 
-    // ─── X축 동기화 (logical range — 서브차트는 NaN 패딩으로 동일 길이 보장) ──────
+    // ─── X축 동기화 (서브차트) ──────
     const syncAll = (range: { from: number; to: number } | null, except?: IChartApi) => {
       if (!range) return;
-      [mainChartApi.current, volumeChartApi.current, subChart1Api.current, subChart2Api.current].forEach((c) => {
+      [mainChartApi.current, subChart1Api.current, subChart2Api.current].forEach((c) => {
         if (c && c !== except) c.timeScale().setVisibleLogicalRange(range);
       });
     };
@@ -227,22 +212,22 @@ export default function CandleChart() {
     mainChartApi.current.timeScale().subscribeVisibleLogicalRangeChange(
       makeSync(() => mainChartApi.current)
     );
-    volumeChartApi.current.timeScale().subscribeVisibleLogicalRangeChange(
-      makeSync(() => volumeChartApi.current)
-    );
+
+    // StackedVolumeChart 동기화용 visibleRange 업데이트
+    mainChartApi.current.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+      if (range) setVisibleRange({ from: range.from, to: range.to });
+    });
 
     return () => {
       mainChartApi.current?.remove();
-      volumeChartApi.current?.remove();
       mainChartApi.current = null;
-      volumeChartApi.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 캔들 데이터 업데이트
   useEffect(() => {
-    if (!klinesData || !candleSeries.current || !volumeSeries.current) return;
+    if (!klinesData || !candleSeries.current) return;
 
     const source: Candle[] | HeikinAshiCandle[] =
       candleType === 'heikinashi' ? klinesData.heikinAshi : klinesData.candles;
@@ -256,39 +241,6 @@ export default function CandleChart() {
     }));
 
     candleSeries.current.setData(candleData);
-
-    // 거래량 — 집계 거래량 우선, 없으면 Binance 단일
-    const aggMap = aggVolMap.current;
-    const useAgg = aggMap.size > 0;
-
-    const getQuoteVol = (c: Candle) =>
-      useAgg ? (aggMap.get(c.time)?.totalQuoteVolume ?? c.volume) : c.volume;
-
-    const qvols = klinesData.candles.map((c) => getQuoteVol(c));
-    const avg20qv = (i: number) => {
-      const slice = qvols.slice(Math.max(0, i - 20), i);
-      return slice.reduce((a, b) => a + b, 0) / (slice.length || 1);
-    };
-
-    const volData = klinesData.candles.map((c, i) => {
-      const isBull = c.close >= c.open;
-      const qv = qvols[i];
-      const isSpike = qv > avg20qv(i) * 2;
-      const aggK = useAgg ? aggMap.get(c.time) : null;
-      const hasDex = aggK ? aggK.dexRatio >= 0.2 : false;
-
-      const baseColor = isBull ? UP_COLOR : DOWN_COLOR;
-      // 이상 거래량: 밝게, DEX 20%+ 시 추가 강조 (보라)
-      const color = isSpike
-        ? hasDex
-          ? '#a78bfa'   // DEX 활발 + 이상 거래량 = 보라
-          : isBull ? '#00ff9d' : '#ff1744'
-        : baseColor + '99';
-
-      return { time: c.time as Time, value: qv, color };
-    });
-
-    volumeSeries.current.setData(volData);
 
     // 마커 (패턴 + 하이킨아시 반전)
     const markers: SeriesMarker<Time>[] = [];
@@ -355,24 +307,18 @@ export default function CandleChart() {
       wickDownColor: DOWN_COLOR,
     });
 
-    mainChartApi.current.subscribeCrosshairMove((param) => {
-      if (param.time && volumeChartApi.current && volumeSeries.current) {
-        try {
-          volumeChartApi.current.setCrosshairPosition(0, param.time, volumeSeries.current);
-        } catch {
-          // series/chart mismatch during re-initialization — safe to ignore
-        }
-      }
-    });
-
     // 오버레이 재생성 후 X축 동기화 재구독
     mainChartApi.current.timeScale().subscribeVisibleLogicalRangeChange((range) => {
       if (isSyncingRef.current || !range) return;
       isSyncingRef.current = true;
-      volumeChartApi.current?.timeScale().setVisibleLogicalRange(range);
       subChart1Api.current?.timeScale().setVisibleLogicalRange(range);
       subChart2Api.current?.timeScale().setVisibleLogicalRange(range);
       isSyncingRef.current = false;
+    });
+
+    // visibleRange 재구독 (차트 재생성 시 유지)
+    mainChartApi.current.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+      if (range) setVisibleRange({ from: range.from, to: range.to });
     });
 
     // 캔들 재설정 트리거를 위해 data 재적용
@@ -435,7 +381,6 @@ export default function CandleChart() {
       if (isSyncingRef.current || !r) return;
       isSyncingRef.current = true;
       mainChartApi.current?.timeScale().setVisibleLogicalRange(r);
-      volumeChartApi.current?.timeScale().setVisibleLogicalRange(r);
       subChart2Api.current?.timeScale().setVisibleLogicalRange(r);
       isSyncingRef.current = false;
     });
@@ -458,7 +403,6 @@ export default function CandleChart() {
       if (isSyncingRef.current || !r) return;
       isSyncingRef.current = true;
       mainChartApi.current?.timeScale().setVisibleLogicalRange(r);
-      volumeChartApi.current?.timeScale().setVisibleLogicalRange(r);
       subChart1Api.current?.timeScale().setVisibleLogicalRange(r);
       isSyncingRef.current = false;
     });
@@ -510,8 +454,6 @@ export default function CandleChart() {
     chart.timeScale().fitContent();
   }
 
-  const aggExchangeCount = aggVolData?.[0]?.breakdown.length ?? 0;
-
   return (
     <div className="flex flex-col w-full h-full bg-bg overflow-hidden relative">
       {/* breakdown 툴팁 오버레이 */}
@@ -530,14 +472,13 @@ export default function CandleChart() {
         title="드래그하여 차트 높이 조절"
       />
 
-      {/* 거래량 차트 + 집계 출처 표시 */}
-      <div className="relative border-t border-border">
-        {aggExchangeCount > 1 && (
-          <div className="absolute top-0.5 left-2 z-10 flex items-center gap-1">
-            <span className="text-[9px] text-accent">⬡ {aggExchangeCount}개 거래소 합산</span>
-          </div>
-        )}
-        <div ref={volumeChartRef} className="w-full" />
+      {/* 거래소별 스택 거래량 */}
+      <div className="border-t border-border">
+        <StackedVolumeChart
+          candles={klinesData?.candles ?? []}
+          aggVolData={aggVolData ?? []}
+          timeToCoord={timeToCoord}
+        />
       </div>
       {sub1 && (
         <div className="w-full border-t border-border">

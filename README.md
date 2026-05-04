@@ -1,6 +1,6 @@
 # ChartTrace
 
-트레이더 중심 암호화폐 기술적 분석 플랫폼. 실시간 캔들차트, 기술 지표, 시가총액 순위 히스토리를 하나의 UI에서 제공합니다.
+트레이더 중심 암호화폐 기술적 분석 플랫폼. 실시간 캔들차트, 기술 지표, 시가총액 순위 히스토리, 멀티 거래소 통합 거래량을 하나의 UI에서 제공합니다.
 
 ---
 
@@ -9,9 +9,22 @@
 ### 차트 분석
 - **캔들차트 / 하이킨아시** 실시간 전환 (Binance WebSocket)
 - **기술 지표**: BB, EMA 20/50/200, MACD, RSI, StochRSI, OBV, ATR
-- **캔들 패턴 자동 인식**: 도지, 망치형, 역망치형, 유성형, 상승/하락 장악형
 - **하이킨아시 반전 신호** 마커 자동 표시
-- **거래량 이상 감지** + 매수/매도 비율
+- **세로 드래그 리사이즈**: 메인 차트 하단 핸들을 드래그해 높이 조절 (180px ~ 800px)
+- **RSI 다이버전스 신호**: 1H · 4H 봉 기준 강세/약세 다이버전스 자동 감지
+
+### 통합 거래량 차트
+- **16개 거래소 거래량을 거래소별 색상으로 누적 표시** (SVG 스택 바)
+- CEX 12개: Binance, OKX, Bybit, MEXC, KuCoin, Bitget, HTX, Gate.io, Kraken, Coinbase, Crypto.com, Upbit
+- DEX 4개: Hyperliquid, Uniswap, PancakeSwap, dYdX
+- 메인 캔들차트와 픽셀 단위 정밀 정렬 (LWC `timeToCoordinate` 연동)
+- 크로스헤어 호버 시 거래소별 점유율 툴팁 표시
+
+### 신호 분석 (Signal Score)
+- **Top 200 코인** 대상 기술 지표 기반 신호 점수 산출
+- 신호 방향에 따라 **초록(강세) / 빨강(약세)** 뱃지 구분
+- 스테이블코인 · 래핑 자산 자동 제외 (USDT, USDC, DAI, RLUSD, USDS, USDE 등)
+- RSI 과매도 반등 · RSI 과매수 반락 · RSI 다이버전스 · 골든크로스 · 볼륨 스파이크 등 다중 신호
 
 ### 순위 비교 차트 (Bump Chart)
 - 시가총액 기준 Top 200 코인 순위를 **SVG bump chart**로 시각화
@@ -21,9 +34,6 @@
 - 스테이블코인 / 래핑 자산 자동 제외
 - 10분마다 자동 스냅샷 누적 → 서버 재시작 시 파일에서 복구
 
-### 멀티 코인 비교
-- 최대 4개 코인 동시 비교 (/compare 페이지)
-
 ---
 
 ## 기술 스택
@@ -31,12 +41,12 @@
 | 영역 | 기술 |
 |------|------|
 | 프론트엔드 | Next.js 14, React 18, TypeScript |
-| 차트 렌더링 | TradingView Lightweight Charts (캔들), SVG (순위) |
+| 차트 렌더링 | TradingView Lightweight Charts (캔들), SVG (순위 · 거래량) |
 | 상태 관리 | Zustand |
 | 데이터 페칭 | TanStack Query |
 | 백엔드 | Express.js, TypeScript (tsx) |
 | 실시간 | Binance WebSocket 프록시 |
-| 외부 API | Binance REST (OHLCV), CoinGecko (시가총액 · 순위) |
+| 외부 API | Binance REST (OHLCV), CoinGecko (시가총액 · 순위), 16개 거래소 공개 API |
 | 기술 지표 | technicalindicators |
 
 ---
@@ -52,24 +62,29 @@ ChartTrace/
 │       │   ├── klines.ts         # OHLCV + 집계 거래량
 │       │   ├── indicators.ts     # 기술 지표 계산
 │       │   ├── rankings.ts       # 순위 히스토리 (Phase1/2 시딩, autoSnapshot)
-│       │   ├── signals.ts        # 신호 점수
-│       │   └── volume.ts         # 거래량 분석
+│       │   ├── signals.ts        # 신호 점수 (Top 200, RSI 다이버전스 포함)
+│       │   └── volume.ts         # 멀티 거래소 통합 거래량
 │       ├── services/
 │       │   ├── heikinashi.ts
 │       │   ├── indicators.ts
 │       │   ├── patterns.ts
-│       │   └── signalScore.ts
-│       └── exchanges/            # 거래소 어댑터 (Binance, Bybit, OKX 등)
+│       │   └── signalScore.ts    # 신호 점수 + RSI 다이버전스 감지
+│       └── exchanges/            # 거래소 어댑터
+│           ├── adapter.interface.ts
+│           ├── aggregator.ts     # 멀티 거래소 합산 엔진
+│           ├── cex/              # Binance, OKX, Bybit, MEXC, KuCoin, Bitget,
+│           │                     # HTX, Gate.io, Kraken, Coinbase, Crypto.com, Upbit
+│           └── dex/              # Hyperliquid, Uniswap, PancakeSwap, dYdX
 ├── frontend/
 │   ├── app/
 │   │   ├── page.tsx              # 메인 차트
-│   │   ├── rankings/page.tsx     # 순위 비교 차트
 │   │   └── compare/page.tsx      # 멀티 코인 비교
 │   ├── components/
 │   │   ├── chart/
-│   │   │   ├── CandleChart.tsx   # 메인 캔들차트
-│   │   │   ├── RankCompareView.tsx # Bump chart (SVG)
-│   │   │   └── ...
+│   │   │   ├── CandleChart.tsx       # 메인 캔들차트 + 드래그 리사이즈
+│   │   │   ├── StackedVolumeChart.tsx # 거래소별 누적 거래량 (SVG)
+│   │   │   ├── RankCompareView.tsx   # Bump chart (SVG)
+│   │   │   └── SignalScore.tsx       # 신호 점수 카드
 │   │   ├── layout/, sidebar/, panels/, rankings/
 │   └── lib/
 │       ├── store.ts              # Zustand 글로벌 상태
@@ -124,8 +139,10 @@ npm run dev
 | GET | `/api/rankings` | 현재 Top 200 순위 |
 | GET | `/api/rankings/history` | 순위 히스토리 (배치) |
 | GET | `/api/rankings/price-history/:coinId` | 코인별 가격 히스토리 |
-| GET | `/api/signals` | 신호 점수 |
-| GET | `/api/volume` | 거래량 분석 |
+| GET | `/api/signals?symbols=...` | Top 200 신호 점수 배치 |
+| GET | `/api/signals/:symbol` | 단일 코인 신호 점수 |
+| GET | `/api/volume?symbol=&interval=&dex=` | 멀티 거래소 통합 거래량 |
+| GET | `/api/volume/exchanges` | 지원 거래소 목록 |
 | WS | `/ws` | Binance 실시간 스트림 프록시 |
 
 ---
