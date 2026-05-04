@@ -18,6 +18,7 @@ export interface SignalScoreResult {
 }
 
 export interface AggVolSnapshot {
+  timestamp: number;
   totalQuoteVolume: number;
   dexRatio: number;
   breakdown: { exchange: string; type: 'CEX' | 'DEX'; quoteVolume: number; share: number }[];
@@ -30,18 +31,16 @@ function detectRSIDivergence(candles: OHLCV[], timeLabel: string): SignalDetail[
   const RSI_BUFFER = 3; // 노이즈 필터: RSI 최소 3pt 차이 필요
   if (candles.length < LOOKBACK + 14) return [];
 
-  const slice  = candles.slice(-LOOKBACK);
-  const closes = slice.map((c) => c.close);
-  const highs  = slice.map((c) => c.high);
-  const lows   = slice.map((c) => c.low);
+  const slice = candles.slice(-LOOKBACK);
+  const highs = slice.map((c) => c.high);
+  const lows  = slice.map((c) => c.low);
 
-  const rsiVals  = RSI.calculate({ period: 14, values: closes });
-  const rsiStart = closes.length - rsiVals.length; // 항상 14
+  // 전체 캔들로 RSI 계산 → warmup이 LOOKBACK 구간 바깥에서 완료되어
+  // Window A 포함 30봉 전체에 유효한 RSI값이 보장됨
+  const allRsi = RSI.calculate({ period: 14, values: candles.map((c) => c.close) });
+  const rsiSlice = allRsi.slice(-LOOKBACK); // 길이 = LOOKBACK, 모두 유효
 
-  const getRsi = (i: number): number | null => {
-    const ri = i - rsiStart;
-    return ri >= 0 ? rsiVals[ri] : null;
-  };
+  const getRsi = (i: number): number | null => rsiSlice[i] ?? null;
 
   // Window A (older): 0..HALF-1 / Window B (newer): HALF..LOOKBACK-2 (현재봉 제외)
   let minLowA = Infinity,  rsiMinLowA: number | null = null;
@@ -80,6 +79,82 @@ function detectRSIDivergence(candles: OHLCV[], timeLabel: string): SignalDetail[
       key: `rsi_bear_div_${timeLabel}`,
       label: `RSI 약세 다이버전스 (${timeLabel})`,
       weight: 3,
+      triggered: bearish,
+      direction: bearish ? 'bearish' : 'neutral',
+    },
+  ];
+}
+
+// OBV 다이버전스 감지 — 집계 거래량 기반 누적 OBV vs 가격
+function detectOBVDivergence(candles4h: OHLCV[], aggVol: AggVolSnapshot[]): SignalDetail[] {
+  const LOOKBACK = 30;
+  const HALF = 15;
+  const OBV_BUFFER_PCT = 0.03; // OBV 최소 3% 차이 필요 (노이즈 필터)
+
+  if (candles4h.length < LOOKBACK) return [];
+
+  // timestamp → aggQuoteVolume 맵
+  const aggMap = new Map<number, number>();
+  aggVol.forEach((k) => aggMap.set(k.timestamp, k.totalQuoteVolume));
+
+  // 전체 4h 캔들에서 누적 OBV 계산 (집계 거래량 우선, 없으면 Binance 볼륨 폴백)
+  const allOBV: number[] = [];
+  let obv = 0;
+  for (let i = 0; i < candles4h.length; i++) {
+    const c = candles4h[i];
+    const vol = aggMap.get(c.time) ?? c.volume;
+    if (i === 0) {
+      obv = vol;
+    } else {
+      obv += c.close > candles4h[i - 1].close ? vol : c.close < candles4h[i - 1].close ? -vol : 0;
+    }
+    allOBV.push(obv);
+  }
+
+  // 마지막 LOOKBACK봉 슬라이스
+  const sliceCandles = candles4h.slice(-LOOKBACK);
+  const sliceOBV     = allOBV.slice(-LOOKBACK);
+  const highs        = sliceCandles.map((c) => c.high);
+  const lows         = sliceCandles.map((c) => c.low);
+
+  let minLowA = Infinity,  obvMinLowA = Infinity;
+  let minLowB = Infinity,  obvMinLowB = Infinity;
+  let maxHighA = -Infinity, obvMaxHighA = -Infinity;
+  let maxHighB = -Infinity, obvMaxHighB = -Infinity;
+
+  for (let i = 0; i < HALF; i++) {
+    if (lows[i]  < minLowA)  { minLowA  = lows[i];  obvMinLowA  = sliceOBV[i]; }
+    if (highs[i] > maxHighA) { maxHighA = highs[i]; obvMaxHighA = sliceOBV[i]; }
+  }
+  for (let i = HALF; i < LOOKBACK - 1; i++) {
+    if (lows[i]  < minLowB)  { minLowB  = lows[i];  obvMinLowB  = sliceOBV[i]; }
+    if (highs[i] > maxHighB) { maxHighB = highs[i]; obvMaxHighB = sliceOBV[i]; }
+  }
+
+  // OBV 차이를 절대값 기준 비율로 비교 (단위가 달라도 방향 비교는 유효)
+  const obvScale = Math.abs(obv) || 1;
+  const bullish =
+    minLowB < minLowA &&
+    obvMinLowB > obvMinLowA &&
+    (obvMinLowB - obvMinLowA) / obvScale > OBV_BUFFER_PCT;
+
+  const bearish =
+    maxHighB > maxHighA &&
+    obvMaxHighB < obvMaxHighA &&
+    (obvMaxHighA - obvMaxHighB) / obvScale > OBV_BUFFER_PCT;
+
+  return [
+    {
+      key: 'obv_bull_div',
+      label: 'OBV 강세 다이버전스',
+      weight: 2,
+      triggered: bullish,
+      direction: bullish ? 'bullish' : 'neutral',
+    },
+    {
+      key: 'obv_bear_div',
+      label: 'OBV 약세 다이버전스',
+      weight: 2,
       triggered: bearish,
       direction: bearish ? 'bearish' : 'neutral',
     },
@@ -264,6 +339,11 @@ export function calculateSignalScore(
   // ─── RSI 다이버전스 (1H / 4H) ───
   signals.push(...detectRSIDivergence(candles1h, '1H'));
   signals.push(...detectRSIDivergence(candles4h, '4H'));
+
+  // ─── OBV 다이버전스 (4H, 집계 거래량 기반) ───
+  if (aggVol && aggVol.length >= 30) {
+    signals.push(...detectOBVDivergence(candles4h, aggVol));
+  }
 
   // ─── MACD 골든크로스 ───
   if (candles4h.length >= 27) {

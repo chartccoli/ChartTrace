@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import axios from 'axios';
 import NodeCache from 'node-cache';
 import { calculateIndicators } from '../services/indicators';
+import { volumeAggregator } from '../exchanges/aggregator';
 
 const router = Router();
 const cache = new NodeCache({ stdTTL: 30 });
@@ -26,19 +27,37 @@ router.post('/', async (req: Request, res: Response) => {
   }
 
   try {
-    const response = await axios.get(`${BINANCE_BASE}/klines`, {
-      params: { symbol: symbol.toUpperCase(), interval, limit },
-      timeout: 10000,
-    });
+    const needsAggVol = indicators.includes('obv');
+    const sym = symbol.toUpperCase();
+    const stdSymbol = sym.endsWith('USDT') ? `${sym.slice(0, -4)}/USDT` : sym;
 
-    const candles = response.data.map((k: any) => ({
-      time: Math.floor(k[0] / 1000),
-      open: parseFloat(k[1]),
-      high: parseFloat(k[2]),
-      low: parseFloat(k[3]),
-      close: parseFloat(k[4]),
-      volume: parseFloat(k[5]),
-    }));
+    const [klinesRes, aggKlines] = await Promise.all([
+      axios.get(`${BINANCE_BASE}/klines`, {
+        params: { symbol: sym, interval, limit },
+        timeout: 10000,
+      }),
+      needsAggVol
+        ? volumeAggregator.getAggregatedKlines(stdSymbol, interval, limit).catch(() => [])
+        : Promise.resolve([]),
+    ]);
+
+    // aggKline timestamp → totalQuoteVolume 맵
+    const aggVolMap = new Map<number, number>();
+    aggKlines.forEach((k) => aggVolMap.set(k.timestamp, k.totalQuoteVolume));
+
+    const candles = klinesRes.data.map((k: any) => {
+      const time = Math.floor(k[0] / 1000);
+      const binanceVol = parseFloat(k[5]);
+      return {
+        time,
+        open: parseFloat(k[1]),
+        high: parseFloat(k[2]),
+        low: parseFloat(k[3]),
+        close: parseFloat(k[4]),
+        // OBV: 집계 거래량 우선, 없으면 Binance 폴백
+        volume: aggVolMap.get(time) ?? binanceVol,
+      };
+    });
 
     const result = calculateIndicators(candles, indicators);
     const payload = { times: candles.map((c: any) => c.time), ...result };

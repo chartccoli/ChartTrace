@@ -160,6 +160,17 @@ npm run dev
 
 ---
 
+## 기술 문서 (docs/)
+
+| 문서 | 설명 |
+|------|------|
+| [ranking-chart.md](docs/ranking-chart.md) | 시총 순위 bump chart — 시딩, Phase 1/2, 파일 영속성, 과거 실수 |
+| [signal-score.md](docs/signal-score.md) | 신호 점수 시스템 — 신호 목록, RSI/OBV 다이버전스, 캐싱 전략 |
+| [volume-aggregator.md](docs/volume-aggregator.md) | 멀티 거래소 거래량 집계 — 16개 어댑터, OBV 연동, 어댑터 추가 가이드 |
+| [chart-architecture.md](docs/chart-architecture.md) | 차트 아키텍처 — LWC 패턴, 좌표 연동, 드래그 리사이즈, 알려진 함정 |
+
+---
+
 ## License
 
 Copyright (c) 2025 chartccoli. All Rights Reserved.  

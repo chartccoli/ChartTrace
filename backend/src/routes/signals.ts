@@ -53,6 +53,7 @@ router.get('/:symbol', async (req: Request, res: Response) => {
     const rankChange = getRankChange7d(symbol as string);
     const aggVol = aggKlines.length > 0
       ? aggKlines.map((k) => ({
+          timestamp: k.timestamp,
           totalQuoteVolume: k.totalQuoteVolume,
           dexRatio: k.dexRatio,
           breakdown: k.breakdown,
@@ -109,7 +110,7 @@ router.get('/', async (req: Request, res: Response) => {
     })
   );
 
-  cache.set(cacheKey, results, 120); // 배치는 2분 캐싱
+  cache.set(cacheKey, results, 180); // 배치는 3분 캐싱
   res.json(results);
 });
 

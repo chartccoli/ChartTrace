@@ -110,7 +110,8 @@ export default function CoinList() {
     },
     enabled: symbols.length > 0,
     refetchInterval: 120000,
-    staleTime: 60000,
+    staleTime: 120000,
+    placeholderData: (prev: any) => prev,
   });
 
   const filtered = tradableCoins.filter(
