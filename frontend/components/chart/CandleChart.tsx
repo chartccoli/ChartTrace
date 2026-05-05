@@ -31,20 +31,33 @@ const MAIN_CHART_DEFAULT_H = 420;
 const MAIN_CHART_MIN_H     = 180;
 const MAIN_CHART_MAX_H     = 800;
 
+// SVG crosshair line을 React 리렌더 없이 직접 DOM 조작
+function updateVolCrosshairLine(lineEl: SVGLineElement | null, x: number | null) {
+  if (!lineEl) return;
+  if (x !== null) {
+    lineEl.setAttribute('x1', String(x));
+    lineEl.setAttribute('x2', String(x));
+    lineEl.style.display = '';
+  } else {
+    lineEl.style.display = 'none';
+  }
+}
+
 export default function CandleChart() {
   const { symbol, timeframe, candleType, indicators, showPatterns } = useChartStore();
 
   const mainChartHeightRef = useRef(MAIN_CHART_DEFAULT_H);
+  // visibleRange 상태 변경 → StackedVolumeChart 재렌더 → timeToCoord로 바 위치 재계산
   const [visibleRange, setVisibleRange] = useState<{ from: number; to: number } | null>(null);
-  const [crosshairX, setCrosshairX] = useState<number | null>(null);
 
-  const mainChartRef = useRef<HTMLDivElement>(null);
-  const subChart1Ref = useRef<HTMLDivElement>(null);
-  const subChart2Ref = useRef<HTMLDivElement>(null);
-  const tooltipRef   = useRef<HTMLDivElement>(null);
+  const mainChartRef    = useRef<HTMLDivElement>(null);
+  const subChart1Ref    = useRef<HTMLDivElement>(null);
+  const subChart2Ref    = useRef<HTMLDivElement>(null);
+  const tooltipRef      = useRef<HTMLDivElement>(null);
+  // SVG crosshair line DOM ref — React state 없이 직접 조작해 리렌더 방지
+  const volCrosshairRef = useRef<SVGLineElement | null>(null);
 
-  // 순환 업데이트 방지 플래그
-  const isSyncingRef    = useRef(false);
+  const isSyncingRef     = useRef(false);
   const crosshairSyncRef = useRef(false);
 
   const mainChartApi  = useRef<IChartApi | null>(null);
@@ -57,11 +70,14 @@ export default function CandleChart() {
   const subChart1SeriesRef = useRef<ISeriesApi<any> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const subChart2SeriesRef = useRef<ISeriesApi<any> | null>(null);
+  // 오버레이 시리즈(BB, EMA) — 차트 재생성 없이 교체하기 위해 ref로 추적
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const overlaySeriesRef   = useRef<ISeriesApi<any>[]>([]);
 
-  // 집계 거래량 맵 (timestamp → AggregatedKline)
-  const aggVolMap    = useRef<Map<number, AggregatedKline>>(new Map());
+  // 툴팁 전용 거래량 맵 (timestamp → AggregatedKline)
+  const tooltipVolMap  = useRef<Map<number, AggregatedKline>>(new Map());
   // 크로스헤어 가격 조회용 (time → close)
-  const candleDataMap = useRef<Map<number, number>>(new Map());
+  const candleDataMap  = useRef<Map<number, number>>(new Map());
 
   const activeList = getActiveIndicatorList(indicators);
   const subIndicators = activeList.filter((k) =>
@@ -98,7 +114,7 @@ export default function CandleChart() {
     if (!aggVolData) return;
     const map = new Map<number, AggregatedKline>();
     aggVolData.forEach((k) => map.set(k.timestamp, k));
-    aggVolMap.current = map;
+    tooltipVolMap.current = map;
   }, [aggVolData]);
 
   // width: 80 — 모든 차트의 rightPriceScale 폭을 동일하게 고정 → X축 바 위치 일치
@@ -137,7 +153,7 @@ export default function CandleChart() {
     []
   );
 
-  // 메인 차트에 크로스헤어·범위 구독을 붙이는 공통 함수 (차트 재생성 시마다 호출)
+  // 메인 차트에 크로스헤어·범위 구독을 붙이는 공통 함수 (마운트 시 한 번만 호출)
   const attachMainSubscriptions = useCallback((chart: IChartApi) => {
     chart.subscribeCrosshairMove((param) => {
       // 크로스헤어 전파 (순환 방지)
@@ -148,11 +164,11 @@ export default function CandleChart() {
             subChart1Api.current.setCrosshairPosition(0, param.time, subChart1SeriesRef.current);
           if (subChart2Api.current && subChart2SeriesRef.current)
             subChart2Api.current.setCrosshairPosition(0, param.time, subChart2SeriesRef.current);
-          setCrosshairX(param.point?.x ?? null);
+          updateVolCrosshairLine(volCrosshairRef.current, param.point?.x ?? null);
         } else {
           subChart1Api.current?.clearCrosshairPosition();
           subChart2Api.current?.clearCrosshairPosition();
-          setCrosshairX(null);
+          updateVolCrosshairLine(volCrosshairRef.current, null);
         }
         crosshairSyncRef.current = false;
       }
@@ -165,7 +181,7 @@ export default function CandleChart() {
         return;
       }
       const ts = param.time as number;
-      const aggK = aggVolMap.current.get(ts);
+      const aggK = tooltipVolMap.current.get(ts);
       if (!aggK || aggK.breakdown.length === 0) {
         tooltip.style.display = 'none';
         return;
@@ -232,12 +248,12 @@ export default function CandleChart() {
       if (subChart2Api.current && subChart2SeriesRef.current)
         subChart2Api.current.setCrosshairPosition(0, t, subChart2SeriesRef.current);
       const x = mainChartApi.current?.timeScale().timeToCoordinate(t) ?? null;
-      setCrosshairX(x);
+      updateVolCrosshairLine(volCrosshairRef.current, x);
     } else {
       mainChartApi.current?.clearCrosshairPosition();
       subChart1Api.current?.clearCrosshairPosition();
       subChart2Api.current?.clearCrosshairPosition();
-      setCrosshairX(null);
+      updateVolCrosshairLine(volCrosshairRef.current, null);
     }
     crosshairSyncRef.current = false;
   }, []);
@@ -321,36 +337,23 @@ export default function CandleChart() {
     mainChartApi.current?.timeScale().fitContent();
   }, [klinesData, candleType, showPatterns]);
 
-  // 오버레이 지표 (BB, EMA) — 심볼/타임프레임 변경 시 메인 차트 재생성으로 초기화
+  // 오버레이 지표 (BB, EMA) — 차트 인스턴스를 유지한 채 시리즈만 교체
+  // 기존 방식(차트 destroy/recreate)을 제거해 스크롤 위치 보존 및 구독 재연결 불필요
   useEffect(() => {
-    if (!mainChartApi.current || !mainChartRef.current) return;
+    if (!mainChartApi.current) return;
 
-    mainChartApi.current.remove();
-    mainChartApi.current = createChart(mainChartRef.current, baseChartOptions(mainChartHeightRef.current));
-
-    candleSeries.current = mainChartApi.current.addCandlestickSeries({
-      upColor: UP_COLOR,
-      downColor: DOWN_COLOR,
-      borderUpColor: UP_COLOR,
-      borderDownColor: DOWN_COLOR,
-      wickUpColor: UP_COLOR,
-      wickDownColor: DOWN_COLOR,
+    // 기존 오버레이 시리즈 제거
+    overlaySeriesRef.current.forEach((s) => {
+      try { mainChartApi.current!.removeSeries(s); } catch { /* 이미 제거된 경우 무시 */ }
     });
-
-    // 차트 재생성 후 구독 재연결
-    attachMainSubscriptions(mainChartApi.current);
-
-    // 캔들 재적용
-    if (klinesData) {
-      const source = candleType === 'heikinashi' ? klinesData.heikinAshi : klinesData.candles;
-      candleSeries.current.setData(
-        source.map((c) => ({ time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close }))
-      );
-    }
+    overlaySeriesRef.current = [];
 
     if (!indData) return;
+
     const chart = mainChartApi.current;
     const times = indData.times;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const newSeries: ISeriesApi<any>[] = [];
 
     if (indicators.bb && indData.bb) {
       const upper  = chart.addLineSeries({ color: INDICATOR_COLORS.bb_upper,  lineWidth: 1, lineStyle: LineStyle.Dashed, lastValueVisible: false, priceLineVisible: false });
@@ -359,6 +362,7 @@ export default function CandleChart() {
       upper.setData(indData.bb.map((v, i) => ({ time: times[i] as Time, value: v.upper! })).filter((v) => v.value != null));
       middle.setData(indData.bb.map((v, i) => ({ time: times[i] as Time, value: v.middle! })).filter((v) => v.value != null));
       lower.setData(indData.bb.map((v, i) => ({ time: times[i] as Time, value: v.lower! })).filter((v) => v.value != null));
+      newSeries.push(upper, middle, lower);
     }
 
     (['ema20', 'ema50', 'ema200'] as const).forEach((key) => {
@@ -369,10 +373,11 @@ export default function CandleChart() {
             .map((v, i) => ({ time: times[i] as Time, value: v! }))
             .filter((v) => v.value != null)
         );
+        newSeries.push(s);
       }
     });
 
-    chart.timeScale().fitContent();
+    overlaySeriesRef.current = newSeries;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [indData, indicators.bb, indicators.ema20, indicators.ema50, indicators.ema200]);
 
@@ -404,11 +409,11 @@ export default function CandleChart() {
         if (subChart2Api.current && subChart2SeriesRef.current)
           subChart2Api.current.setCrosshairPosition(0, param.time, subChart2SeriesRef.current);
         const x = mainChartApi.current?.timeScale().timeToCoordinate(param.time as Time) ?? null;
-        setCrosshairX(x);
+        updateVolCrosshairLine(volCrosshairRef.current, x);
       } else {
         mainChartApi.current?.clearCrosshairPosition();
         subChart2Api.current?.clearCrosshairPosition();
-        setCrosshairX(null);
+        updateVolCrosshairLine(volCrosshairRef.current, null);
       }
       crosshairSyncRef.current = false;
     });
@@ -449,11 +454,11 @@ export default function CandleChart() {
         if (subChart1Api.current && subChart1SeriesRef.current)
           subChart1Api.current.setCrosshairPosition(0, param.time, subChart1SeriesRef.current);
         const x = mainChartApi.current?.timeScale().timeToCoordinate(param.time as Time) ?? null;
-        setCrosshairX(x);
+        updateVolCrosshairLine(volCrosshairRef.current, x);
       } else {
         mainChartApi.current?.clearCrosshairPosition();
         subChart1Api.current?.clearCrosshairPosition();
-        setCrosshairX(null);
+        updateVolCrosshairLine(volCrosshairRef.current, null);
       }
       crosshairSyncRef.current = false;
     });
@@ -551,7 +556,7 @@ export default function CandleChart() {
           candles={klinesData?.candles ?? []}
           aggVolData={aggVolData ?? []}
           timeToCoord={timeToCoord}
-          crosshairX={crosshairX}
+          crosshairLineRef={volCrosshairRef}
           onCrosshairChange={handleVolumeCrosshair}
         />
       </div>

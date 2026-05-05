@@ -38,12 +38,6 @@ function snapshotRanks(coins: { symbol: string; market_cap_rank: number }[]) {
   }
 }
 
-export function getRankChange7d(binanceSymbol: string): number | null {
-  const hist = rankHistory[binanceSymbol.toUpperCase()];
-  if (!hist || hist.length < 2) return null;
-  return hist[0].rank - hist[hist.length - 1].rank;
-}
-
 // ─── 파일 영속성 ─────────────────────────────────────────────────────────────
 const DATA_DIR  = path.join(__dirname, '../../data');
 const HIST_FILE = path.join(DATA_DIR, 'rank-history.json');

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, RefObject } from 'react';
 import type { Candle, AggregatedKline } from '@/lib/binance';
 
 const EXCHANGE_COLORS: Record<string, string> = {
@@ -56,11 +56,12 @@ interface Props {
   aggVolData: AggregatedKline[];
   timeToCoord: (time: number) => number | null;
   height?: number;
-  crosshairX?: number | null;
+  // crosshair line을 React state 없이 DOM ref로 직접 조작 (마우스 이동마다 리렌더 방지)
+  crosshairLineRef?: RefObject<SVGLineElement>;
   onCrosshairChange?: (time: number | null) => void;
 }
 
-export default function StackedVolumeChart({ candles, aggVolData, timeToCoord, height = 88, crosshairX, onCrosshairChange }: Props) {
+export default function StackedVolumeChart({ candles, aggVolData, timeToCoord, height = 88, crosshairLineRef, onCrosshairChange }: Props) {
   // aggVolData가 바뀔 때만 Map 재생성
   const aggVolMap = useMemo(() => {
     const map = new Map<number, AggregatedKline>();
@@ -163,15 +164,15 @@ export default function StackedVolumeChart({ candles, aggVolData, timeToCoord, h
             </g>
           );
         })}
-        {crosshairX !== null && crosshairX !== undefined && (
-          <line
-            x1={crosshairX} x2={crosshairX}
-            y1={0} y2={height}
-            stroke="#6b6b80"
-            strokeWidth={1}
-            style={{ pointerEvents: 'none' }}
-          />
-        )}
+        {/* 항상 렌더, 초기 hidden — CandleChart가 DOM ref로 직접 위치 조작 */}
+        <line
+          ref={crosshairLineRef}
+          x1={0} x2={0}
+          y1={0} y2={height}
+          stroke="#6b6b80"
+          strokeWidth={1}
+          style={{ display: 'none', pointerEvents: 'none' }}
+        />
       </svg>
 
       {seenExchanges.length > 0 && (
