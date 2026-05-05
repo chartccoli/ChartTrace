@@ -56,9 +56,11 @@ interface Props {
   aggVolData: AggregatedKline[];
   timeToCoord: (time: number) => number | null;
   height?: number;
+  crosshairX?: number | null;
+  onCrosshairChange?: (time: number | null) => void;
 }
 
-export default function StackedVolumeChart({ candles, aggVolData, timeToCoord, height = 88 }: Props) {
+export default function StackedVolumeChart({ candles, aggVolData, timeToCoord, height = 88, crosshairX, onCrosshairChange }: Props) {
   // aggVolData가 바뀔 때만 Map 재생성
   const aggVolMap = useMemo(() => {
     const map = new Map<number, AggregatedKline>();
@@ -94,9 +96,28 @@ export default function StackedVolumeChart({ candles, aggVolData, timeToCoord, h
     });
   });
 
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (!onCrosshairChange || bars.length === 0) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    let closest = bars[0];
+    let minDist = Math.abs(bars[0].x - mx);
+    for (let i = 1; i < bars.length; i++) {
+      const dist = Math.abs(bars[i].x - mx);
+      if (dist < minDist) { minDist = dist; closest = bars[i]; }
+    }
+    onCrosshairChange(closest.candle.time);
+  };
+
   return (
     <div className="w-full flex flex-col" style={{ overflow: 'hidden' }}>
-      <svg width="100%" height={height} style={{ display: 'block', overflow: 'visible' }}>
+      <svg
+        width="100%"
+        height={height}
+        style={{ display: 'block', overflow: 'visible' }}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => onCrosshairChange?.(null)}
+      >
         {bars.map(({ x, candle, aggK }) => {
           const totalVol = aggK?.totalQuoteVolume ?? candle.volume;
           const totalH   = (totalVol / maxVol) * height;
@@ -142,6 +163,15 @@ export default function StackedVolumeChart({ candles, aggVolData, timeToCoord, h
             </g>
           );
         })}
+        {crosshairX !== null && crosshairX !== undefined && (
+          <line
+            x1={crosshairX} x2={crosshairX}
+            y1={0} y2={height}
+            stroke="#6b6b80"
+            strokeWidth={1}
+            style={{ pointerEvents: 'none' }}
+          />
+        )}
       </svg>
 
       {seenExchanges.length > 0 && (

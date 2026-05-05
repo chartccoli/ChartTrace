@@ -12,6 +12,7 @@
 - **하이킨아시 반전 신호** 마커 자동 표시
 - **세로 드래그 리사이즈**: 메인 차트 하단 핸들을 드래그해 높이 조절 (180px ~ 800px)
 - **RSI 다이버전스 신호**: 1H · 4H 봉 기준 강세/약세 다이버전스 자동 감지
+- **크로스헤어 전파**: 메인차트 · 서브차트 · 거래량 차트 간 마우스 호버 시 모든 차트에 vertical line 동기화
 
 ### 통합 거래량 차트
 - **16개 거래소 거래량을 거래소별 색상으로 누적 표시** (SVG 스택 바)
@@ -167,7 +168,7 @@ npm run dev
 | [ranking-chart.md](docs/ranking-chart.md) | 시총 순위 bump chart — 시딩, Phase 1/2, 파일 영속성, 과거 실수 |
 | [signal-score.md](docs/signal-score.md) | 신호 점수 시스템 — 신호 목록, RSI/OBV 다이버전스, 캐싱 전략 |
 | [volume-aggregator.md](docs/volume-aggregator.md) | 멀티 거래소 거래량 집계 — 16개 어댑터, OBV 연동, 어댑터 추가 가이드 |
-| [chart-architecture.md](docs/chart-architecture.md) | 차트 아키텍처 — LWC 패턴, 좌표 연동, 드래그 리사이즈, 알려진 함정 |
+| [chart-architecture.md](docs/chart-architecture.md) | 차트 아키텍처 — LWC 패턴, 크로스헤어 전파, 좌표 연동, 드래그 리사이즈, 알려진 함정 |
 
 ---
 
