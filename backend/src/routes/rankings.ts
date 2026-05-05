@@ -38,6 +38,21 @@ function snapshotRanks(coins: { symbol: string; market_cap_rank: number }[]) {
   }
 }
 
+// 7일 전 순위 대비 현재 순위 변화 (양수 = 상승)
+// 기존: hist[0](최초 포인트)과 비교 → 7일이 아닌 전체 기간 비교 버그 있었음
+export function getRankChange7d(binanceSymbol: string): number | null {
+  const hist = rankHistory[binanceSymbol.toUpperCase()];
+  if (!hist || hist.length < 2) return null;
+  const now = Math.floor(Date.now() / 1000);
+  const sevenDaysAgo = now - 7 * 24 * 3600;
+  // 7일 전에 가장 가까운 포인트 (단, 최소 3일 이전 데이터가 있어야 유효)
+  const ref = hist.reduce((best, pt) =>
+    Math.abs(pt.timestamp - sevenDaysAgo) < Math.abs(best.timestamp - sevenDaysAgo) ? pt : best
+  );
+  if (ref.timestamp > now - 3 * 24 * 3600) return null;
+  return ref.rank - hist[hist.length - 1].rank;
+}
+
 // ─── 파일 영속성 ─────────────────────────────────────────────────────────────
 const DATA_DIR  = path.join(__dirname, '../../data');
 const HIST_FILE = path.join(DATA_DIR, 'rank-history.json');
