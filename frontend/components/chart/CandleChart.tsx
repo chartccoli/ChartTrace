@@ -12,7 +12,7 @@ import {
   LineStyle,
 } from 'lightweight-charts';
 import { useQuery } from '@tanstack/react-query';
-import { fetchKlines, fetchIndicators, fetchAggregatedVolume, Candle, HeikinAshiCandle, AggregatedKline } from '@/lib/binance';
+import { fetchKlines, fetchIndicators, fetchAggregatedVolume, Candle, HeikinAshiCandle } from '@/lib/binance';
 import { useChartStore, ActiveIndicators } from '@/lib/store';
 import { INDICATOR_COLORS } from './Indicators';
 import StackedVolumeChart from './StackedVolumeChart';
@@ -53,7 +53,6 @@ export default function CandleChart() {
   const mainChartRef    = useRef<HTMLDivElement>(null);
   const subChart1Ref    = useRef<HTMLDivElement>(null);
   const subChart2Ref    = useRef<HTMLDivElement>(null);
-  const tooltipRef      = useRef<HTMLDivElement>(null);
   // SVG crosshair line DOM ref — React state 없이 직접 조작해 리렌더 방지
   const volCrosshairRef = useRef<SVGLineElement | null>(null);
 
@@ -74,8 +73,6 @@ export default function CandleChart() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const overlaySeriesRef   = useRef<ISeriesApi<any>[]>([]);
 
-  // 툴팁 전용 거래량 맵 (timestamp → AggregatedKline)
-  const tooltipVolMap  = useRef<Map<number, AggregatedKline>>(new Map());
   // 크로스헤어 가격 조회용 (time → close)
   const candleDataMap  = useRef<Map<number, number>>(new Map());
 
@@ -109,13 +106,6 @@ export default function CandleChart() {
     refetchInterval: 60000,
     staleTime: 30000,
   });
-
-  useEffect(() => {
-    if (!aggVolData) return;
-    const map = new Map<number, AggregatedKline>();
-    aggVolData.forEach((k) => map.set(k.timestamp, k));
-    tooltipVolMap.current = map;
-  }, [aggVolData]);
 
   // width: 80 — 모든 차트의 rightPriceScale 폭을 동일하게 고정 → X축 바 위치 일치
   const baseChartOptions = useCallback(
@@ -172,36 +162,6 @@ export default function CandleChart() {
         }
         crosshairSyncRef.current = false;
       }
-
-      // 거래소 분포 툴팁
-      const tooltip = tooltipRef.current;
-      if (!tooltip) return;
-      if (!param.time || !param.point) {
-        tooltip.style.display = 'none';
-        return;
-      }
-      const ts = param.time as number;
-      const aggK = tooltipVolMap.current.get(ts);
-      if (!aggK || aggK.breakdown.length === 0) {
-        tooltip.style.display = 'none';
-        return;
-      }
-      const sorted = [...aggK.breakdown].sort((a, b) => b.quoteVolume - a.quoteVolume);
-      const lines = sorted
-        .map((b) => `<span style="color:${b.type === 'DEX' ? '#a78bfa' : '#e2e2e8'}">${b.exchange}</span> <span style="color:#6b6b80">${b.share.toFixed(1)}%</span>`)
-        .join(' · ');
-      const dexTag = aggK.dexRatio >= 0.2
-        ? `<span style="color:#a78bfa;margin-left:4px">⬡ 온체인</span>`
-        : '';
-      tooltip.innerHTML = `<div style="font-size:10px;white-space:nowrap">${lines}${dexTag}</div>`;
-      const chartEl = mainChartRef.current;
-      if (!chartEl) return;
-      const rect = chartEl.getBoundingClientRect();
-      let left = param.point.x + 10;
-      if (left + 200 > rect.width) left = param.point.x - 210;
-      tooltip.style.left = `${left}px`;
-      tooltip.style.top  = `${param.point.y - 10}px`;
-      tooltip.style.display = 'block';
     });
 
     // X축 동기화 + StackedVolumeChart 재렌더 트리거
@@ -534,13 +494,6 @@ export default function CandleChart() {
 
   return (
     <div className="flex flex-col w-full h-full bg-bg overflow-hidden relative">
-      {/* breakdown 툴팁 오버레이 */}
-      <div
-        ref={tooltipRef}
-        className="absolute z-20 pointer-events-none hidden bg-card border border-border rounded px-2 py-1 shadow-lg"
-        style={{ maxWidth: 320 }}
-      />
-
       <div ref={mainChartRef} className="w-full" />
 
       {/* 세로 리사이즈 핸들 */}

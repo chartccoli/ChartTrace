@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, RefObject } from 'react';
+import { useMemo, useRef, RefObject } from 'react';
 import type { Candle, AggregatedKline } from '@/lib/binance';
 
 const EXCHANGE_COLORS: Record<string, string> = {
@@ -62,6 +62,9 @@ interface Props {
 }
 
 export default function StackedVolumeChart({ candles, aggVolData, timeToCoord, height = 88, crosshairLineRef, onCrosshairChange }: Props) {
+  // 툴팁 DOM ref — React 상태 없이 직접 조작
+  const tooltipRef = useRef<HTMLDivElement>(null);
+
   // aggVolData가 바뀔 때만 Map 재생성
   const aggVolMap = useMemo(() => {
     const map = new Map<number, AggregatedKline>();
@@ -98,7 +101,7 @@ export default function StackedVolumeChart({ candles, aggVolData, timeToCoord, h
   });
 
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (!onCrosshairChange || bars.length === 0) return;
+    if (bars.length === 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     let closest = bars[0];
@@ -107,17 +110,51 @@ export default function StackedVolumeChart({ candles, aggVolData, timeToCoord, h
       const dist = Math.abs(bars[i].x - mx);
       if (dist < minDist) { minDist = dist; closest = bars[i]; }
     }
-    onCrosshairChange(closest.candle.time);
+    onCrosshairChange?.(closest.candle.time);
+
+    // 거래소 분포 툴팁
+    const tooltip = tooltipRef.current;
+    if (!tooltip) return;
+    const aggK = closest.aggK;
+    if (!aggK || aggK.breakdown.length === 0) {
+      tooltip.style.display = 'none';
+      return;
+    }
+    const sorted = [...aggK.breakdown].sort((a, b) => b.quoteVolume - a.quoteVolume);
+    const lines = sorted
+      .map((b) => `<span style="color:${b.type === 'DEX' ? '#a78bfa' : '#e2e2e8'}">${exchangeLabel(b.exchange)}</span> <span style="color:#6b6b80">${b.share.toFixed(1)}%</span>`)
+      .join(' · ');
+    const dexTag = aggK.dexRatio >= 0.2
+      ? `<span style="color:#a78bfa;margin-left:6px">⬡ 온체인</span>`
+      : '';
+    tooltip.innerHTML = `<div style="font-size:10px;white-space:nowrap">${lines}${dexTag}</div>`;
+    // 툴팁 위치: 마우스 오른쪽, 우측 끝 근처면 왼쪽으로 반전
+    const tipW = 320;
+    const left = mx + 8 + tipW > rect.width ? Math.max(0, mx - tipW - 8) : mx + 8;
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = '4px';
+    tooltip.style.display = 'block';
+  };
+
+  const handleMouseLeave = () => {
+    onCrosshairChange?.(null);
+    if (tooltipRef.current) tooltipRef.current.style.display = 'none';
   };
 
   return (
-    <div className="w-full flex flex-col" style={{ overflow: 'hidden' }}>
+    <div className="w-full flex flex-col" style={{ position: 'relative' }}>
+      {/* 거래소 분포 툴팁 — 거래량 차트 내부에 절대 위치 */}
+      <div
+        ref={tooltipRef}
+        className="pointer-events-none bg-card border border-border rounded px-2 py-1 shadow-lg"
+        style={{ display: 'none', position: 'absolute', zIndex: 20, maxWidth: 480 }}
+      />
       <svg
         width="100%"
         height={height}
         style={{ display: 'block', overflow: 'visible' }}
         onMouseMove={handleMouseMove}
-        onMouseLeave={() => onCrosshairChange?.(null)}
+        onMouseLeave={handleMouseLeave}
       >
         {bars.map(({ x, candle, aggK }) => {
           const totalVol = aggK?.totalQuoteVolume ?? candle.volume;
