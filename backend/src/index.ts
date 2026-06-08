@@ -9,6 +9,7 @@ import indicatorsRouter from './routes/indicators';
 import rankingsRouter, { seedRankHistory, startAutoSnapshot, loadRankHistory } from './routes/rankings';
 import signalsRouter from './routes/signals';
 import volumeRouter from './routes/volume';
+import futuresRouter from './routes/futures';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -22,6 +23,7 @@ app.use('/api/indicators', indicatorsRouter);
 app.use('/api/rankings', rankingsRouter);
 app.use('/api/signals', signalsRouter);
 app.use('/api/volume', volumeRouter);
+app.use('/api/futures', futuresRouter);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 

@@ -4,6 +4,7 @@ import NodeCache from 'node-cache';
 import { calculateSignalScore } from '../services/signalScore';
 import { getRankChange7d } from './rankings';
 import { volumeAggregator } from '../exchanges/aggregator';
+import { getAggregatedFutures } from '../exchanges/futuresAggregator';
 
 const router = Router();
 const cache = new NodeCache({ stdTTL: 60 }); // 1분 캐싱
@@ -42,12 +43,12 @@ router.get('/:symbol', async (req: Request, res: Response) => {
       ? `${symbol.slice(0, -4)}/USDT`
       : symbol as string;
 
-    const [candles1h, candles4h, candles1d, aggKlines] = await Promise.all([
+    const [candles1h, candles4h, candles1d, aggKlines, futuresKlines] = await Promise.all([
       fetchBinanceKlines(symbol as string, '1h', 100),
       fetchBinanceKlines(symbol as string, '4h', 100),
-      fetchBinanceKlines(symbol as string, '1d', 60),
-      // 집계 거래량 (CEX 전용 — 속도 우선, 실패해도 무시)
+      fetchBinanceKlines(symbol as string, '1d', 200), // EMA200 계산을 위해 200봉 필요
       volumeAggregator.getAggregatedKlines(stdSymbol, '4h', 30).catch(() => []),
+      getAggregatedFutures(stdSymbol, '4h', 20).catch(() => []),
     ]);
 
     const rankChange = getRankChange7d(symbol as string);
@@ -59,8 +60,14 @@ router.get('/:symbol', async (req: Request, res: Response) => {
           breakdown: k.breakdown,
         }))
       : undefined;
+    const frData = futuresKlines.length > 0
+      ? futuresKlines.map((k) => ({
+          timestamp: k.timestamp,
+          fundingRateDailyPct: k.fundingRateDailyPct,
+        }))
+      : undefined;
 
-    const result = calculateSignalScore(candles1h, candles4h, candles1d, rankChange, aggVol);
+    const result = calculateSignalScore(candles1h, candles4h, candles1d, rankChange, aggVol, frData);
 
     cache.set(cacheKey, result);
     res.json(result);
