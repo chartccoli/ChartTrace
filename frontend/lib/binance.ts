@@ -155,3 +155,23 @@ export async function fetchAggregatedVolume(
   });
   return data;
 }
+
+export interface FuturesKline {
+  timestamp: number;
+  fundingRateDailyPct: number;
+  openInterestUsd: number;
+  oiBreakdown: { exchange: string; oiUsd: number; share: number }[];
+  frBreakdown: { exchange: string; dailyPct: number }[];
+}
+
+export async function fetchFuturesData(
+  symbol: string,
+  interval: Timeframe,
+  limit = 200
+): Promise<FuturesKline[]> {
+  const stdSymbol = symbol.endsWith('USDT') ? `${symbol.slice(0, -4)}/USDT` : symbol;
+  const { data } = await axios.get<FuturesKline[]>(`${API_BASE}/api/futures`, {
+    params: { symbol: stdSymbol, interval, limit },
+  });
+  return data;
+}

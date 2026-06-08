@@ -29,8 +29,10 @@ export const INDICATOR_LABELS: Record<string, string> = {
   stochRsi: 'Stoch RSI',
   obv: 'OBV',
   atr: 'ATR',
+  fr: 'Funding Rate',
+  oi: 'Open Interest',
 };
 
 // 서브차트 지표 목록
-export const SUB_CHART_INDICATORS = ['macd', 'rsi', 'stochRsi', 'obv', 'atr'] as const;
+export const SUB_CHART_INDICATORS = ['macd', 'rsi', 'stochRsi', 'obv', 'atr', 'fr', 'oi'] as const;
 export const OVERLAY_INDICATORS = ['bb', 'ema20', 'ema50', 'ema200'] as const;

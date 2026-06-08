@@ -13,6 +13,8 @@ export interface ActiveIndicators {
   stochRsi: boolean;
   obv: boolean;
   atr: boolean;
+  fr: boolean;
+  oi: boolean;
 }
 
 interface ChartStore {
@@ -46,6 +48,8 @@ export const useChartStore = create<ChartStore>((set, get) => ({
     stochRsi: false,
     obv: false,
     atr: false,
+    fr: false,
+    oi: false,
   },
   setSymbol: (symbol) => set({ symbol }),
   setTimeframe: (timeframe) => set({ timeframe }),
